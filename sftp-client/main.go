@@ -2,12 +2,15 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha1"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
@@ -213,6 +216,52 @@ func getHostKey(host string) ssh.PublicKey {
     return hostKey
 }
 
-func hashed() {
+// GetPublicKeyByHostname retrieves the public key associated with the given hostname
+func GetPublicKeyByHostname(hostname string) (string, error) {
+    usr, err := user.Current()
+    if err != nil {
+        return "", err
+    }
 
+    knownHostsPath := usr.HomeDir + "/.ssh/known_hosts"
+    file, err := os.Open(knownHostsPath)
+    if err != nil {
+        return "", err
+    }
+    defer file.Close()
+
+    scanner := bufio.NewScanner(file)
+    for scanner.Scan() {
+        line := scanner.Text()
+        fields := strings.Fields(line)
+
+        if len(fields) < 3 {
+            continue
+        }
+
+        hashedHostname := fields[0]
+        publicKey := fields[2]
+
+        // If the hashed hostname matches the input hostname
+        if matchHashedHostname(hostname, hashedHostname) {
+            return publicKey, nil
+        }
+    }
+
+    if err := scanner.Err(); err != nil {
+        return "", err
+    }
+
+    return "", nil // Public key not found for the specified hostname
+}
+
+// matchHashedHostname checks if the hashed hostname matches the input hostname
+func matchHashedHostname(hostname, hashedHostname string) bool {
+    decodedHashedHostname, err := base64.StdEncoding.DecodeString(hashedHostname)
+    if err != nil {
+        return false
+    }
+
+    hashedInput := sha1.Sum([]byte(hostname))
+    return string(hashedInput[:]) == string(decodedHashedHostname[:])
 }
