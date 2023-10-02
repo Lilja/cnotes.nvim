@@ -2,24 +2,25 @@ package main
 
 import (
 	"bufio"
-	"crypto/sha1"
-	"encoding/base64"
+	"bytes"
+	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
-	"os/user"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/kevinburke/ssh_config"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+var known_hosts_file = fmt.Sprintf("%s/.ssh/known_hosts", os.Getenv("HOME"))
 
 func loadSSHConfig() (*ssh_config.Config, error) {
 	home := os.Getenv("HOME")
@@ -41,41 +42,31 @@ func createSftpConfig(
 	if err != nil {
 		return nil, err
 	}
-	var k string
-	pubKey, err := cfg.Get(sshHost, "IdentityFile")
-	if err != nil || len(pubKey) < 1 {
-	  home := os.Getenv("HOME")
-		k = fmt.Sprintf("%s/.ssh/id_rsa", home);
-	} else {
-		k = pubKey
 
+	var auths []ssh.AuthMethod
+
+	if aconn, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK")); err == nil {
+		auths = append(auths, ssh.PublicKeysCallback(agent.NewClient(aconn).Signers))
 	}
-	private, err := getPrivateKeyPath(k)
+
+	hkCallback, err := knownhosts.New(known_hosts_file)
 	if err != nil {
+		log.Println("No known host file?")
 		return nil, err
 	}
-  fmt.Sprintf("%d", private);
-
-  var auths []ssh.AuthMethod
-
-  if aconn, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK")); err == nil {
-      auths = append(auths, ssh.PublicKeysCallback(agent.NewClient(aconn).Signers))
-  }
-  hostname, _ := cfg.Get(sshHost, "Hostname")
-
 	return &ssh.ClientConfig{
-		User: username,
-		Auth: auths,
-    HostKeyCallback: ssh.FixedHostKey(getHostKey(hostname)),
+		User:            username,
+		Auth:            auths,
+		HostKeyCallback: hkCallback,
 	}, nil
 }
 
 func getPrivateKeyPath(privateKey string) (ssh.Signer, error) {
-      fmt.Println(privateKey)
+	fmt.Println(privateKey)
 	privateBytes, err := os.ReadFile(privateKey)
 	if err != nil {
 
-      fmt.Println("asdf")
+		fmt.Println("asdf")
 		return nil, err
 	}
 
@@ -97,7 +88,7 @@ func getHostAndPort(
 	} else {
 		port = _port
 	}
-	hostname, err := config.Get(host, "Host")
+	hostname, err := config.Get(host, "Hostname")
 	if err != nil {
 		return "", errors.New(fmt.Sprintf("No host property for %s", host))
 	}
@@ -105,9 +96,9 @@ func getHostAndPort(
 }
 
 func exitProgram(err error) {
-    fmt.Println("cnotes-sftp-client: Progam exited :(");
-    fmt.Println(err);
-    os.Exit(1);
+	fmt.Println("cnotes-sftp-client: Progam exited :(")
+	fmt.Println(err)
+	os.Exit(1)
 }
 
 func main() {
@@ -119,6 +110,7 @@ func main() {
 	filePtr := flag.String("file", "", "File to be uploaded")
 	destPtr := flag.String("dest", "", "Destination folder")
 	sshHostPtr := flag.String("ssh-host", "", "A host in the .ssh/config file")
+	forceUpload := flag.Bool("force", false, "Force upload if file already exists")
 
 	flag.Parse()
 
@@ -133,135 +125,116 @@ func main() {
 	if err != nil {
 		exitProgram(err)
 	}
-  config, err := createSftpConfig(cfg, *sshHostPtr);
+	config, err := createSftpConfig(cfg, *sshHostPtr)
 	if err != nil {
 		exitProgram(err)
 	}
 
 	conn, err := ssh.Dial("tcp", hostPort, config)
 	if err != nil {
-		exitProgram(err)
+		log.Println("Error dialing up tcp connection")
+		if strings.Contains(err.Error(), "knownhosts: key is unknown") {
+			exitProgram(errors.New(fmt.Sprintf("No known host entry for this host. Please try to connect to it manually and/or set the known host entry in %s", known_hosts_file)))
+		} else {
+			exitProgram(err)
+		}
 	}
 	defer conn.Close()
 
 	sftpClient, err = sftp.NewClient(conn)
 	if err != nil {
+		log.Println("sftp client error")
 		exitProgram(err)
 	}
 	defer sftpClient.Close()
 
 	srcFile, err := os.Open(*filePtr)
 	if err != nil {
+		log.Println("os open error")
 		exitProgram(err)
 	}
 	defer srcFile.Close()
+	srcFileStat, err := os.Stat(*filePtr)
+	if err != nil {
+		log.Println("os stat error")
+		exitProgram(err)
+	}
 
 	destFile := *destPtr + "/" + *filePtr
 	stat, err := sftpClient.Stat(destFile)
 
-	if os.IsNotExist(err) || stat.ModTime().Before(time.Now()) {
-		dstFile, err := sftpClient.Create(destFile)
-		if err != nil {
-			exitProgram(err)
-		}
-		defer dstFile.Close()
-
-    bytes, err := io.Copy(dstFile, srcFile)
-		if err != nil {
-			exitProgram(err)
-		}
-
-		fmt.Printf("%d bytes uploaded\n", bytes)
+	if os.IsNotExist(err) {
+		uploadFile(sftpClient, destFile, srcFile)
 	} else {
-		fmt.Println("The file is up-to-date.")
+		obuf := bytes.NewBufferString("")
+		rd := bufio.NewWriter(obuf)
+		remoteFile, err := sftpClient.Open(destFile)
+		if err != nil {
+			exitProgram(errors.New("Unable to check checksumz"))
+		}
+		downloadFileToInMemory(rd, remoteFile)
+		rd.Flush()
+
+    var flag = true
+		if compareVersions(obuf, srcFile) {
+			fmt.Println("OK: Up to date!")
+      flag = false
+		} else if stat.ModTime().Before(srcFileStat.ModTime()) {
+			if *forceUpload == false {
+				fmt.Println("File exists on remote server and is created earlier than current file. Pass -force to forcefully upload file")
+			}
+		} else {
+			if *forceUpload == false {
+				fmt.Println("File exists on remote server and is created later than current file. Pass -force to forcefully upload file")
+			}
+		}
+		if *forceUpload && flag {
+			uploadFile(sftpClient, destFile, srcFile)
+		}
 	}
 }
 
+func uploadFile(sftpClient *sftp.Client, destFile string, srcFile *os.File) {
+	dstFile, err := sftpClient.Create(destFile)
+	if err != nil {
+		log.Println("Unable to create a file")
+		exitProgram(err)
+	}
+	defer dstFile.Close()
 
-
-// Get host key from local known hosts
-func getHostKey(host string) ssh.PublicKey {
-    // parse OpenSSH known_hosts file
-    // ssh or use ssh-keyscan to get initial key
-    file, err := os.Open(filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts"))
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Unable to read known_hosts file: %v\n", err)
-        os.Exit(1)
-    }
-    defer file.Close()
- 
-    scanner := bufio.NewScanner(file)
-    var hostKey ssh.PublicKey
-    for scanner.Scan() {
-        fields := strings.Split(scanner.Text(), " ")
-        if len(fields) != 3 {
-            continue
-        }
-        if strings.Contains(fields[0], host) {
-            var err error
-            hostKey, _, _, _, err = ssh.ParseAuthorizedKey(scanner.Bytes())
-            if err != nil {
-                fmt.Fprintf(os.Stderr, "Error parsing %q: %v\n", fields[2], err)
-                os.Exit(1)
-            }
-            break
-        }
-    }
- 
-    if hostKey == nil {
-        fmt.Fprintf(os.Stderr, "No hostkey found for %s", host)
-        os.Exit(1)
-    }
- 
-    return hostKey
+	bytes, err := io.Copy(dstFile, srcFile)
+	if err != nil {
+		log.Println("Error copying file to remote place")
+		exitProgram(err)
+	}
+	fmt.Printf("OK: %d bytes uploaded\n", bytes)
 }
 
-// GetPublicKeyByHostname retrieves the public key associated with the given hostname
-func GetPublicKeyByHostname(hostname string) (string, error) {
-    usr, err := user.Current()
-    if err != nil {
-        return "", err
-    }
-
-    knownHostsPath := usr.HomeDir + "/.ssh/known_hosts"
-    file, err := os.Open(knownHostsPath)
-    if err != nil {
-        return "", err
-    }
-    defer file.Close()
-
-    scanner := bufio.NewScanner(file)
-    for scanner.Scan() {
-        line := scanner.Text()
-        fields := strings.Fields(line)
-
-        if len(fields) < 3 {
-            continue
-        }
-
-        hashedHostname := fields[0]
-        publicKey := fields[2]
-
-        // If the hashed hostname matches the input hostname
-        if matchHashedHostname(hostname, hashedHostname) {
-            return publicKey, nil
-        }
-    }
-
-    if err := scanner.Err(); err != nil {
-        return "", err
-    }
-
-    return "", nil // Public key not found for the specified hostname
+func downloadFileToInMemory(inMemoryWriter io.Writer, srcFile *sftp.File) {
+	bytes, err := io.Copy(inMemoryWriter, srcFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to download remote file: %v\n", err)
+		os.Exit(1)
+	}
+	log.Println(bytes, "bytes read")
 }
 
-// matchHashedHostname checks if the hashed hostname matches the input hostname
-func matchHashedHostname(hostname, hashedHostname string) bool {
-    decodedHashedHostname, err := base64.StdEncoding.DecodeString(hashedHostname)
-    if err != nil {
-        return false
-    }
+func compareVersions(
+	remoteFile *bytes.Buffer,
+	localFile *os.File,
+) bool {
+	remoteFileSha := sha256.New()
+	remoteFileSha.Write(remoteFile.Bytes())
 
-    hashedInput := sha1.Sum([]byte(hostname))
-    return string(hashedInput[:]) == string(decodedHashedHostname[:])
+	localFileBuffer := bytes.NewBufferString("")
+	rd := bufio.NewWriter(localFileBuffer)
+
+	io.Copy(rd, localFile)
+	rd.Flush()
+	localFileSha := sha256.New()
+	localFileSha.Write(localFileBuffer.Bytes())
+
+	lb := localFileSha.Sum(nil)
+	rb := remoteFileSha.Sum(nil)
+	return bytes.Equal(lb, rb)
 }
