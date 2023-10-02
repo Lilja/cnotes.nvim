@@ -31,4 +31,3 @@ jobs:
         goversion: "https://dl.google.com/go/go1.20.1.linux-amd64.tar.gz"
         project_path: "./sftp-client"
         binary_name: "cnotes-sftp-client"
-        extra_files: LICENSE README.md
