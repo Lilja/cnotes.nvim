@@ -3,7 +3,6 @@ local M = {
 		localFileDirectory = os.getenv("HOME") .. "/Documents/journal",
 		destination = "/config",
 		syncBinary = "./sftp-client/cnotes-sftp-client",
-		username = "erik",
 		sshHost = "erk-temp",
 		fileExtension = ".md",
 	},

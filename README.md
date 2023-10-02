@@ -2,6 +2,13 @@
 
 Journaling workflow
 
+## Usage
+* `:Journal` Enter a journaling mode
+Supports varargs such as `3 days ago`, `1 month ago`:
+`:Journal yesterday`, `:Journal 4 days ago`
+
+* `:JournalForceSync` If you need to write after upload
+
 
 ## Installing
 ### Binary
@@ -19,8 +26,20 @@ Otherwise, you need to download the latest version for yourself.
 ```lua
 {
     "Lilja/cnotes.nvim",
+    -- configuration needed!
     config = function()
-        require('cnotes')
+        require('cnotes').setup({
+            -- The ssh host in your ~/.ssh/config to connect to.
+            sshHost = "",
+            -- The directory to locally store journals
+            localFileDirectory = "~/Documents/journal",
+             -- Binary
+            syncBinary = "cnotes-sftp-client",
+            -- The path on the remote sFTP host of where you want to store files.
+            destination = "/",
+            -- When using :Journal, what kind of file type it will be.
+            fileExtension = ".md",
+        })
     end
 }
 ```
