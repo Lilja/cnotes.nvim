@@ -115,15 +115,14 @@ func main() {
 
 	flag.Parse()
 
-
-  localFile := *filePtr
+	localFile := *filePtr
 	if localFile == "" || *destPtr == "" {
 		exitProgram(errors.New("Please provide file and destination arguments"))
 	}
-  if strings.Contains(*filePtr, "/") {
-      log.Println("Cleaning file name")
-      localFile = path.Base(*filePtr)
-  }
+	if strings.Contains(*filePtr, "/") {
+		log.Println("Cleaning file name")
+		localFile = path.Base(*filePtr)
+	}
 	cfg, err := loadSSHConfig()
 	if err != nil {
 		exitProgram(err)
@@ -182,10 +181,10 @@ func main() {
 		downloadFileToInMemory(rd, remoteFile)
 		rd.Flush()
 
-    var flag = true
+		var flag = true
 		if compareVersions(obuf, *filePtr) {
 			fmt.Println("OK: Up to date!")
-      flag = false
+			flag = false
 		} else if stat.ModTime().Before(srcFileStat.ModTime()) {
 			if *forceUpload == false {
 				fmt.Println("File exists on remote server and is created earlier than current file. Pass -force to forcefully upload file")
@@ -202,7 +201,7 @@ func main() {
 }
 
 func uploadFile(sftpClient *sftp.Client, destFile string, srcFile *os.File) {
-  log.Println(destFile, "will be created on the remote")
+	log.Println(destFile, "will be created on the remote")
 	dstFile, err := sftpClient.Create(destFile)
 	if err != nil {
 		log.Println("Unable to create a file")
@@ -237,7 +236,7 @@ func compareVersions(
 	localFileBuffer := bytes.NewBufferString("")
 	rd := bufio.NewWriter(localFileBuffer)
 
-  localFile, err := os.Open(fileName)
+	localFile, err := os.Open(fileName)
 	if err != nil {
 		log.Println("os open error")
 		exitProgram(err)
