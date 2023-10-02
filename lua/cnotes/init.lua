@@ -18,7 +18,7 @@ end
 function parseRelativeTime(relativeTime)
 	local _, _, num, unit = string.find(relativeTime, "(%d+) (%a+)")
 	local timeTable = os.date("*t")
-  print(relativeTime)
+	print(relativeTime)
 
 	if relativeTime == "yesterday" then
 		timeTable.day = timeTable.day - 1
@@ -97,7 +97,7 @@ end
 
 function handleOutput(output)
 	if output:find("OK:") then
-    -- do nothing. Don't polute stdout
+	-- do nothing. Don't polute stdout
 	elseif output:find("File exists on remote server") then
 		M.print("File already exists remotely. Use :JournalForceSync to overwrite")
 	else
@@ -128,16 +128,8 @@ function M.forceResync()
 	handleOutput(runSyncProcess(file, true))
 end
 
-function M.do_something(args)
-	commonDateParser(args.args)
+function M.startJournaling(args)
+	commonDateParser(args)
 end
-
-vim.api.nvim_create_user_command(
-	"Journal",
-	M.do_something,
-	{ desc = "Open up a journal with today or at a specific date", nargs = "*" }
-)
-
-vim.api.nvim_create_user_command("JournalForceSync", M.forceResync, { desc = "Force sync to remote server", nargs = 0 })
 
 return M
