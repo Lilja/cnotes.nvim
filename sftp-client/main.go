@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/kevinburke/ssh_config"
@@ -114,9 +115,15 @@ func main() {
 
 	flag.Parse()
 
-	if *filePtr == "" || *destPtr == "" {
+
+  localFile := *filePtr
+	if localFile == "" || *destPtr == "" {
 		exitProgram(errors.New("Please provide file and destination arguments"))
 	}
+  if strings.Contains(*filePtr, "/") {
+      log.Println("Cleaning file name")
+      localFile = path.Base(*filePtr)
+  }
 	cfg, err := loadSSHConfig()
 	if err != nil {
 		exitProgram(err)
@@ -160,7 +167,7 @@ func main() {
 		exitProgram(err)
 	}
 
-	destFile := *destPtr + "/" + *filePtr
+	destFile := *destPtr + "/" + localFile
 	stat, err := sftpClient.Stat(destFile)
 
 	if os.IsNotExist(err) {
@@ -176,7 +183,7 @@ func main() {
 		rd.Flush()
 
     var flag = true
-		if compareVersions(obuf, srcFile) {
+		if compareVersions(obuf, *filePtr) {
 			fmt.Println("OK: Up to date!")
       flag = false
 		} else if stat.ModTime().Before(srcFileStat.ModTime()) {
@@ -195,6 +202,7 @@ func main() {
 }
 
 func uploadFile(sftpClient *sftp.Client, destFile string, srcFile *os.File) {
+  log.Println(destFile, "will be created on the remote")
 	dstFile, err := sftpClient.Create(destFile)
 	if err != nil {
 		log.Println("Unable to create a file")
@@ -221,13 +229,20 @@ func downloadFileToInMemory(inMemoryWriter io.Writer, srcFile *sftp.File) {
 
 func compareVersions(
 	remoteFile *bytes.Buffer,
-	localFile *os.File,
+	fileName string,
 ) bool {
 	remoteFileSha := sha256.New()
 	remoteFileSha.Write(remoteFile.Bytes())
 
 	localFileBuffer := bytes.NewBufferString("")
 	rd := bufio.NewWriter(localFileBuffer)
+
+  localFile, err := os.Open(fileName)
+	if err != nil {
+		log.Println("os open error")
+		exitProgram(err)
+	}
+	defer localFile.Close()
 
 	io.Copy(rd, localFile)
 	rd.Flush()
