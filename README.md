@@ -1,0 +1,3 @@
+# Cnotes (wip)
+
+Journaling workflow
