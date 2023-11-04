@@ -3,13 +3,13 @@
 Journaling workflow of locally creating a journal file and uploading it to a remote target.
 
 ## Usage
-* `:Journal` Enter a journaling mode
+* `:CNoteJournal` Enter a journaling mode
 
 Supports varargs such as `3 days ago`, `1 month ago`:
 
-`:Journal yesterday`, `:Journal 4 days ago`
+`:CNoteJournal yesterday`, `:CNoteJournal 4 days ago`
 
-* `:JournalForceSync` If you need to write after upload
+* `:CNoteJournalForceSync` If you need to write after upload
 
 
 ## Installing
