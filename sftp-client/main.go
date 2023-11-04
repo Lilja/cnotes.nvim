@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+var version = "1"
 
 var known_hosts_file = fmt.Sprintf("%s/.ssh/known_hosts", os.Getenv("HOME"))
 
@@ -44,17 +45,22 @@ func createSftpConfig(
 		return nil, err
 	}
 
-	var auths []ssh.AuthMethod
-
-	if aconn, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK")); err == nil {
-		auths = append(auths, ssh.PublicKeysCallback(agent.NewClient(aconn).Signers))
-	}
-
 	hkCallback, err := knownhosts.New(known_hosts_file)
 	if err != nil {
 		log.Println("No known host file?")
 		return nil, err
 	}
+
+	var auths []ssh.AuthMethod
+
+	aconn, sockErr := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK"))
+
+	if sockErr == nil {
+		auths = append(auths, ssh.PublicKeysCallback(agent.NewClient(aconn).Signers))
+	}
+
+	fmt.Println(len(auths))
+
 	return &ssh.ClientConfig{
 		User:            username,
 		Auth:            auths,
@@ -112,6 +118,7 @@ func main() {
 	destPtr := flag.String("dest", "", "Destination folder")
 	sshHostPtr := flag.String("ssh-host", "", "A host in the .ssh/config file")
 	forceUpload := flag.Bool("force", false, "Force upload if file already exists")
+	log.Println(fmt.Sprint("Version ", version))
 
 	flag.Parse()
 
@@ -125,14 +132,17 @@ func main() {
 	}
 	cfg, err := loadSSHConfig()
 	if err != nil {
+		log.Println("load ssh config")
 		exitProgram(err)
 	}
 	hostPort, err := getHostAndPort(cfg, *sshHostPtr)
 	if err != nil {
+		log.Println("get hsot and port")
 		exitProgram(err)
 	}
 	config, err := createSftpConfig(cfg, *sshHostPtr)
 	if err != nil {
+		log.Println("create sftp config")
 		exitProgram(err)
 	}
 
