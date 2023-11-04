@@ -64,12 +64,13 @@ function commonDateParser(str)
 	end
 	local filename = M.opts.localFileDirectory .. "/" .. ymd .. M.opts.fileExtension
 	vim.cmd("e " .. filename)
-	vim.api.nvim_create_autocmd({ "BufWritePost" }, {
+	--[[vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 		buffer = vim.api.nvim_get_current_buf(),
 		callback = function()
 			handleOutput(runSyncProcess(filename, false))
 		end,
 	})
+  --]]
 end
 
 function runSyncProcess(filename, force)
@@ -126,6 +127,16 @@ function M.forceResync()
 	end
 	handleOutput(runSyncProcess(file, true))
 end
+
+function M.sync()
+	local file = vim.api.nvim_buf_get_name(0)
+	if not file:find(M.opts.localFileDirectory) then
+		M.print(pluginName .. " not in localFileDirectory( " .. M.opts.localFileDirectory .. ")")
+	end
+	handleOutput(runSyncProcess(file, false))
+end
+
+
 
 function M.startJournaling(args)
 	commonDateParser(args)
