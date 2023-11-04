@@ -43,7 +43,7 @@ end
 
 function commonDateParser(str)
 	local ts
-	if str ~= nil then
+	if str == nil then
 		ts = parseRelativeTime("today")
 	else
 		ts = parseRelativeTime(str)
@@ -64,13 +64,6 @@ function commonDateParser(str)
 	end
 	local filename = M.opts.localFileDirectory .. "/" .. ymd .. M.opts.fileExtension
 	vim.cmd("e " .. filename)
-	--[[vim.api.nvim_create_autocmd({ "BufWritePost" }, {
-		buffer = vim.api.nvim_get_current_buf(),
-		callback = function()
-			handleOutput(runSyncProcess(filename, false))
-		end,
-	})
-  --]]
 end
 
 function runSyncProcess(filename, force)
